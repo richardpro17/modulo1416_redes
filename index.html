@@ -952,8 +952,6 @@
 
         let shuffledQuestions = [];
         let currentQuestionIndex = 0;
-        
-        // Estado del usuario por cada pregunta: { selected: [], isChecked: boolean, isCorrect: boolean }
         let userAnswersState = [];
 
         function shuffleArray(array) {
@@ -964,10 +962,10 @@
         }
 
         function startQuiz() {
-            shuffledQuestions = [...questions];
+            // Copiamos y mezclamos las preguntas
+            shuffledQuestions = JSON.parse(JSON.stringify(questions)); // Deep copy simple para no perder referencias
             shuffleArray(shuffledQuestions);
             
-            // Inicializar estado vacío para todas las preguntas
             userAnswersState = shuffledQuestions.map(() => ({
                 selected: [],
                 isChecked: false,
@@ -1000,6 +998,8 @@
         function updateNavStyles() {
             userAnswersState.forEach((state, index) => {
                 const btn = document.getElementById(`nav-btn-${index}`);
+                if (!btn) return;
+                
                 btn.className = 'nav-btn'; // Reset
                 if (index === currentQuestionIndex) {
                     btn.classList.add('active');
@@ -1015,7 +1015,6 @@
         }
 
         function saveCurrentSelection() {
-            // Guarda la selección actual antes de cambiar de pregunta (si no está ya checkeada)
             if (!userAnswersState[currentQuestionIndex].isChecked) {
                 const selectedOptions = optionsContainer.querySelectorAll('.option.selected');
                 const userAnswers = Array.from(selectedOptions).map(opt => opt.textContent);
@@ -1038,7 +1037,6 @@
             questionCounter.textContent = `Pregunta ${currentQuestionIndex + 1} de ${shuffledQuestions.length}`;
             questionText.textContent = currentQuestion.question;
 
-            // Imagen
             const existingImage = document.getElementById('question-image');
             if (existingImage) existingImage.remove();
             if (currentQuestion.image) {
@@ -1050,16 +1048,13 @@
                 questionText.insertAdjacentElement('afterend', img);
             }
 
-            // Instrucción
             if (currentQuestion.answers.length > 1) {
                 instructionText.textContent = "Selecciona todas las que apliquen.";
             } else {
                 instructionText.textContent = "Selecciona una respuesta.";
             }
 
-            // Opciones
             optionsContainer.innerHTML = '';
-            // Si ya fue validada, deshabilitar
             if (currentState.isChecked) {
                 optionsContainer.classList.add('disabled');
             } else {
@@ -1071,12 +1066,10 @@
                 optionElement.classList.add('option');
                 optionElement.textContent = option;
                 
-                // Restaurar selección guardada
                 if (currentState.selected.includes(option)) {
                     optionElement.classList.add('selected');
                 }
 
-                // Si ya está validada, aplicar colores
                 if (currentState.isChecked) {
                     if (currentQuestion.answers.includes(option)) {
                         optionElement.classList.add('correct');
@@ -1093,20 +1086,17 @@
                 optionsContainer.appendChild(optionElement);
             });
 
-            // Explicación
             if (currentState.isChecked) {
                 explanationText.textContent = currentQuestion.explanation;
                 explanationArea.style.display = 'block';
-                checkBtn.style.display = 'none'; // Ya validado
+                checkBtn.style.display = 'none'; 
             } else {
                 explanationArea.style.display = 'none';
-                checkBtn.style.display = 'block'; // Mostrar botón verificar
+                checkBtn.style.display = 'block'; 
             }
 
-            // Botones de navegación
             prevBtn.disabled = (currentQuestionIndex === 0);
             
-            // Lógica Botón Siguiente / Finalizar
             if (currentQuestionIndex === shuffledQuestions.length - 1) {
                 nextBtn.style.display = 'none';
                 finishBtn.style.display = 'block';
@@ -1125,6 +1115,22 @@
             selectedElement.classList.toggle('selected');
         }
 
+        // --- NUEVA FUNCIÓN AUXILIAR PARA EVALUAR RESPUESTAS ---
+        function evaluateAnswerLogic(userAnswers, correctAnswers) {
+            if (!userAnswers || userAnswers.length === 0) return false;
+
+            if (correctAnswers.length > 1) {
+                // Lógica de selección múltiple
+                let correctSelections = userAnswers.filter(answer => correctAnswers.includes(answer)).length;
+                let incorrectSelections = userAnswers.length - correctSelections;
+                // Debe tener todas las correctas y ninguna incorrecta
+                return (incorrectSelections === 0 && correctSelections === correctAnswers.length);
+            } else {
+                // Lógica de selección única
+                return (userAnswers.length === 1 && userAnswers[0] === correctAnswers[0]);
+            }
+        }
+
         function checkAnswer() {
             const currentQuestion = shuffledQuestions[currentQuestionIndex];
             const selectedOptions = optionsContainer.querySelectorAll('.option.selected');
@@ -1135,28 +1141,14 @@
             }
 
             const userAnswers = Array.from(selectedOptions).map(opt => opt.textContent);
-            const correctAnswers = currentQuestion.answers;
             
-            // Lógica de corrección
-            let isCorrect = false;
-            if (correctAnswers.length > 1) {
-                let correctSelections = userAnswers.filter(answer => correctAnswers.includes(answer)).length;
-                let incorrectSelections = userAnswers.length - correctSelections;
-                if (incorrectSelections === 0 && correctSelections === correctAnswers.length) {
-                    isCorrect = true;
-                }
-            } else {
-                if (userAnswers.length === 1 && userAnswers[0] === correctAnswers[0]) {
-                    isCorrect = true;
-                }
-            }
+            // Usamos la nueva lógica centralizada
+            const isCorrect = evaluateAnswerLogic(userAnswers, currentQuestion.answers);
 
-            // Actualizar estado
             userAnswersState[currentQuestionIndex].isChecked = true;
             userAnswersState[currentQuestionIndex].selected = userAnswers;
             userAnswersState[currentQuestionIndex].isCorrect = isCorrect;
 
-            // Refrescar UI (mostrar colores, explicación, actualizar grid)
             displayQuestion(); 
         }
 
@@ -1172,8 +1164,8 @@
             }
         }
 
+        // --- FUNCIÓN SHOWFINALSCREEN CORREGIDA ---
         function showFinalScreen() {
-            // Asegurarse de guardar la última selección si no se verificó
             saveCurrentSelection();
 
             questionArea.style.display = 'none';
@@ -1181,10 +1173,25 @@
             document.getElementById('question-nav-panel').style.display = 'none';
             finalScreen.style.display = 'block';
 
-            // Calcular puntaje final
             let score = 0;
-            userAnswersState.forEach(state => {
-                if (state.isCorrect) score++;
+
+            // Recorremos TODAS las preguntas para calcular el puntaje final
+            userAnswersState.forEach((state, index) => {
+                // Si la pregunta YA fue verificada por el usuario durante el examen, usamos ese resultado
+                if (state.isChecked) {
+                    if (state.isCorrect) score++;
+                } 
+                // Si la pregunta NO fue verificada (el usuario solo seleccionó y pasó), la evaluamos ahora
+                else {
+                    const correctAnswers = shuffledQuestions[index].answers;
+                    const isNowCorrect = evaluateAnswerLogic(state.selected, correctAnswers);
+                    
+                    // Actualizamos el estado para que salga bien en el resumen
+                    state.isCorrect = isNowCorrect;
+                    state.isChecked = true; // La marcamos como revisada internamente
+                    
+                    if (isNowCorrect) score++;
+                }
             });
 
             const finalPercentage = (score / shuffledQuestions.length) * 100;
@@ -1202,7 +1209,7 @@
                     return `<span class="${className}">${ua}</span>`;
                 }).join(', ');
                 
-                if (state.selected.length === 0) userAnswersHTML = "No se respondió";
+                if (state.selected.length === 0) userAnswersHTML = "<span style='color: #dc3545'>No se respondió</span>";
 
                 const points = state.isCorrect ? 1 : 0;
 
@@ -1210,7 +1217,7 @@
                     <p class="result-question">${index + 1}. ${q.question}</p>
                     <p class="user-answers"><strong>Tu respuesta:</strong> ${userAnswersHTML}</p>
                     <p class="correct-answers-summary"><strong>Respuesta correcta:</strong> ${q.answers.join(', ')}</p>
-                    <p class="points">Puntos obtenidos: ${points.toFixed(2)} / 1.00</p>
+                    <p class="points">Puntos: ${points}</p>
                 `;
                 resultsSummary.appendChild(resultItem);
             });
